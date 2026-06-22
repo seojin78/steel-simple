@@ -1352,11 +1352,14 @@ function Ranking({
 
 /* ───── 입장 ───── */
 function Entry({
-  onEnter
+  onEnter,
+  onAdmin
 }) {
   const [g, setG] = useState('1'),
     [c, setC] = useState('1'),
     [n, setN] = useState('');
+  const [showPw, setShowPw] = useState(false),
+    [pw, setPw] = useState('');
   return /*#__PURE__*/React.createElement("div", {
     className: "pad"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1373,7 +1376,7 @@ function Entry({
     className: "sub"
   }, "\uAC04\uD3B8\uD310 \xB7 \uBAA8\uBC14\uC77C \uC785\uB825")), /*#__PURE__*/React.createElement("div", {
     className: "card"
-  }, /*#__PURE__*/React.createElement("h2", null, "\uCC38\uC5EC \uC815\uBCF4 \uC785\uB825"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("h2", null, "\uD83C\uDFED \uD559\uC2B5\uC790\uB85C \uC785\uC7A5"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 10
     }
@@ -1417,11 +1420,335 @@ function Entry({
       }
       onEnter(g, c, n || `${g}조-${c}번`);
     }
-  }, "\uC785\uC7A5\uD558\uAE30")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFED \uD559\uC2B5\uC790\uB85C \uC785\uC7A5\uD558\uAE30")), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      marginTop: 8
+    }
+  }, !showPw ? /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      background: 'var(--ink)'
+    },
+    onClick: () => setShowPw(true)
+  }, "\uD83D\uDD10 \uAD00\uB9AC\uC790\uB85C \uC785\uC7A5") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "tag"
+  }, "\uAD00\uB9AC\uC790 \uBE44\uBC00\uBC88\uD638"), /*#__PURE__*/React.createElement("input", {
+    className: "txt",
+    type: "password",
+    value: pw,
+    onChange: e => setPw(e.target.value),
+    placeholder: "\uBE44\uBC00\uBC88\uD638 \uC785\uB825"
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      marginTop: 8,
+      background: 'var(--ink)'
+    },
+    onClick: () => onAdmin(pw)
+  }, "\uAD00\uB9AC\uC790 \uC785\uC7A5"))), /*#__PURE__*/React.createElement("div", {
     className: "hint"
   }, "\uD55C \uD68C\uC0AC\uB294 \uD55C \uC0AC\uB78C\uC774 \uC785\uB825\uD558\uC138\uC694. \uC785\uB825\uC740 \uC790\uB3D9 \uC800\uC7A5\uB418\uC5B4 \uC21C\uC704\uC5D0 \uBC18\uC601\uB429\uB2C8\uB2E4."));
 }
 
+/* ───── 관리자 화면 ───── */
+const ADMIN_PW = 'admin2024';
+function Admin({
+  all,
+  onLogout
+}) {
+  const [tab, setTab] = useState('dash');
+  const [detail, setDetail] = useState(null); // 회사 상세보기용 coId
+  const rows = all.map(c => {
+    const co = normalizeCo(c);
+    const s1 = g1Score(co.g1),
+      g2t = gameTotal(co.g2, G2_PERIODS, false),
+      g3t = gameTotal(co.g3, G3_PERIODS, true);
+    return {
+      ...co,
+      g1Score: s1.total,
+      g2Total: g2t,
+      g3Total: g3t,
+      cumTotal: g2t + g3t,
+      key: `${co.groupId}_${co.coId}`
+    };
+  }).sort((a, b) => b.cumTotal - a.cumTotal);
+  const groups = {};
+  rows.forEach(r => {
+    groups[r.groupId] = groups[r.groupId] || [];
+    groups[r.groupId].push(r);
+  });
+
+  // CSV 다운로드
+  const downloadCSV = () => {
+    const header = '조,회사번호,회사이름,G1점수,G2이익,G3이익,G2+G3누적,Foresight,R&D인증서,대출증서,최종저장';
+    const lines = rows.map(r => {
+      const h = r.holdings || {};
+      return [r.groupId, r.coId, r.name, r.g1Score, fmtNum(r.g2Total), fmtNum(r.g3Total), fmtNum(r.cumTotal), h.foresight || 0, h.rnd || 0, h.loanCert || 0, r.updatedAt ? new Date(r.updatedAt).toLocaleString('ko-KR') : '미저장'].join(',');
+    });
+    const csv = '\uFEFF' + header + '\n' + lines.join('\n');
+    const blob = new Blob([csv], {
+      type: 'text/csv;charset=utf-8;'
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'steel_odyssey_data_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+  };
+
+  // 회사 삭제
+  const deleteCo = key => {
+    if (!window.confirm(`정말 [${key}]을(를) 삭제하시겠습니까? 되돌릴 수 없습니다.`)) return;
+    if (DB) DB.ref(`${DB_PATH}/${key}`).remove().then(() => alert('삭제 완료')).catch(e => alert('삭제 실패: ' + e.message));else alert('오프라인 모드에서는 삭제할 수 없습니다.');
+  };
+  // 전체 초기화
+  const resetAll = () => {
+    if (!window.confirm('⚠️ 모든 회사의 데이터를 삭제합니다. 정말로 진행하시겠습니까?')) return;
+    if (!window.confirm('최종 확인: 이 작업은 되돌릴 수 없습니다. 진행하시겠습니까?')) return;
+    if (DB) DB.ref(DB_PATH).remove().then(() => alert('전체 초기화 완료')).catch(e => alert('실패: ' + e.message));
+  };
+  const tabs = [['dash', '현황', '📊'], ['rank', '순위', '🏆'], ['data', '데이터', '💾'], ['settings', '설정', '⚙️']];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "wrap"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "between pad",
+    style: {
+      paddingBottom: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "\uD83D\uDD10 \uAD00\uB9AC\uC790"), " ", /*#__PURE__*/React.createElement("span", {
+    className: "tag"
+  }, "\uC804\uCCB4 ", rows.length, "\uAC1C \uD68C\uC0AC \xB7 ", Object.keys(groups).length, "\uAC1C \uC870")), /*#__PURE__*/React.createElement("button", {
+    className: "tag",
+    style: {
+      border: '1px solid var(--line)',
+      borderRadius: 8,
+      padding: '4px 8px',
+      background: '#fff',
+      color: 'var(--red)'
+    },
+    onClick: onLogout
+  }, "\uB85C\uADF8\uC544\uC6C3")), tab === 'dash' && /*#__PURE__*/React.createElement("div", {
+    className: "pad"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "banner b-blue"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "cond"
+  }, "\uD83D\uDCCA \uC804\uCCB4 \uD604\uD669"), /*#__PURE__*/React.createElement("div", {
+    className: "big",
+    style: {
+      fontSize: 22
+    }
+  }, "\uC804\uCCB4 ", rows.length, "\uAC1C \uD68C\uC0AC"), /*#__PURE__*/React.createElement("div", {
+    className: "sub"
+  }, Object.keys(groups).length, "\uAC1C \uC870 \xB7 \uC2E4\uC2DC\uAC04 DB \uC5F0\uB3D9")), rows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      textAlign: 'center',
+      padding: '16px 0'
+    }
+  }, "\uC544\uC9C1 \uC800\uC7A5\uB41C \uD68C\uC0AC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uD559\uC2B5\uC790\uAC00 \uC785\uC7A5\uD558\uC5EC \uC800\uC7A5\uD558\uBA74 \uC5EC\uAE30\uC5D0 \uB098\uD0C0\uB0A9\uB2C8\uB2E4.")), Object.entries(groups).sort((a, b) => Number(a[0]) - Number(b[0])).map(([gid, cos]) => /*#__PURE__*/React.createElement("div", {
+    key: gid,
+    className: "card"
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      marginBottom: 10
+    }
+  }, "\uD83D\uDCC1 ", gid, "\uC870 (", cos.length, "\uAC1C \uD68C\uC0AC)"), cos.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.key,
+    className: "rank-row",
+    style: {
+      cursor: 'pointer'
+    },
+    onClick: () => {
+      setDetail(detail === r.key ? null : r.key);
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 14
+    }
+  }, r.name, " ", /*#__PURE__*/React.createElement("span", {
+    className: "tag"
+  }, r.coId, "\uBC88")), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      fontSize: 11
+    }
+  }, "G1 ", r.g1Score, "\uC810 \xB7 G2 ", fmtNum(r.g2Total), " \xB7 G3 ", fmtNum(r.g3Total), " \xB7 \uB204\uC801 ", fmtNum(r.cumTotal), "\uC2F9"), /*#__PURE__*/React.createElement("div", {
+    className: "tag"
+  }, r.updatedAt ? '마지막 저장: ' + new Date(r.updatedAt).toLocaleString('ko-KR') : '미저장')), /*#__PURE__*/React.createElement("span", {
+    className: "muted"
+  }, detail === r.key ? '▲' : '▼'))), cos.map(r => detail === r.key && /*#__PURE__*/React.createElement("div", {
+    key: r.key + '_d',
+    style: {
+      background: '#f8fafc',
+      borderRadius: 10,
+      padding: 10,
+      marginTop: 4,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      fontSize: 12,
+      marginBottom: 4
+    }
+  }, "\uD83D\uDCE6 28\uD68C\uAE30 \uBCF4\uC720\uD604\uD669"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13
+    }
+  }, "Foresight ", (r.holdings || {}).foresight || 0, "\uAC1C \xB7 R&D ", (r.holdings || {}).rnd || 0, "\uAC1C \xB7 \uB300\uCD9C ", (r.holdings || {}).loanCert || 0, "\uAC1C"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "minibtn",
+    style: {
+      color: 'var(--red)',
+      borderColor: 'var(--red)'
+    },
+    onClick: () => deleteCo(r.key)
+  }, "\uD83D\uDDD1 \uC774 \uD68C\uC0AC \uC0AD\uC81C"))))))), tab === 'rank' && /*#__PURE__*/React.createElement("div", {
+    className: "pad"
+  }, /*#__PURE__*/React.createElement(Ranking, {
+    all: all,
+    me: {
+      groupId: 'admin',
+      coId: 'admin'
+    }
+  })), tab === 'data' && /*#__PURE__*/React.createElement("div", {
+    className: "pad"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "banner b-green"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "cond"
+  }, "\uD83D\uDCBE \uB370\uC774\uD130 \uAD00\uB9AC"), /*#__PURE__*/React.createElement("div", {
+    className: "big",
+    style: {
+      fontSize: 22
+    }
+  }, "\uC804\uCCB4 \uB370\uC774\uD130 \uB2E4\uC6B4\uB85C\uB4DC"), /*#__PURE__*/React.createElement("div", {
+    className: "sub"
+  }, "\uBAA8\uB4E0 \uD68C\uC0AC\uC758 \uC810\uC218\xB7\uC774\uC775\xB7\uBCF4\uC720\uD604\uD669\uC744 CSV \uD30C\uC77C\uB85C \uBC1B\uC2B5\uB2C8\uB2E4")), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("h2", null, "\uD83D\uDCE5 CSV \uB2E4\uC6B4\uB85C\uB4DC"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      marginBottom: 10
+    }
+  }, "\uBAA8\uB4E0 \uD68C\uC0AC\uC758 \uC870/\uD68C\uC0AC\uBC88\uD638/\uC774\uB984/Game 1\xB72\xB73 \uC810\uC218/\uBCF4\uC720\uD604\uD669\uC774 \uD3EC\uD568\uB41C CSV \uD30C\uC77C\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD569\uB2C8\uB2E4. Excel\uC5D0\uC11C \uC5F4 \uC218 \uC788\uC5B4\uC694."), /*#__PURE__*/React.createElement("button", {
+    className: "btn save",
+    onClick: downloadCSV
+  }, "\uD83D\uDCE5 CSV \uD30C\uC77C \uB2E4\uC6B4\uB85C\uB4DC (", rows.length, "\uAC1C \uD68C\uC0AC)")), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("h2", null, "\uD83D\uDCCB \uC804\uCCB4 \uB370\uC774\uD130 \uBBF8\uB9AC\uBCF4\uAE30"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflowX: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: '100%',
+      fontSize: 12,
+      borderCollapse: 'collapse'
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: 'var(--blueS)'
+    }
+  }, ['조', '번호', '이름', 'G1', 'G2', 'G3', '누적'].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      padding: '6px 4px',
+      textAlign: 'center',
+      borderBottom: '2px solid var(--line)'
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, rows.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.key,
+    style: {
+      borderBottom: '1px solid var(--line)'
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: '5px 4px',
+      textAlign: 'center'
+    }
+  }, r.groupId), /*#__PURE__*/React.createElement("td", {
+    style: {
+      textAlign: 'center'
+    }
+  }, r.coId), /*#__PURE__*/React.createElement("td", null, r.name), /*#__PURE__*/React.createElement("td", {
+    style: {
+      textAlign: 'right',
+      fontWeight: 700
+    }
+  }, r.g1Score), /*#__PURE__*/React.createElement("td", {
+    style: {
+      textAlign: 'right',
+      fontWeight: 700
+    }
+  }, fmtNum(r.g2Total)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      textAlign: 'right',
+      fontWeight: 700
+    }
+  }, fmtNum(r.g3Total)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      textAlign: 'right',
+      fontWeight: 800,
+      color: 'var(--green)'
+    }
+  }, fmtNum(r.cumTotal))))))))), tab === 'settings' && /*#__PURE__*/React.createElement("div", {
+    className: "pad"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "banner b-amber"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "cond"
+  }, "\u2699\uFE0F \uC124\uC815"), /*#__PURE__*/React.createElement("div", {
+    className: "big",
+    style: {
+      fontSize: 22
+    }
+  }, "\uAC8C\uC784 \uAD00\uB9AC"), /*#__PURE__*/React.createElement("div", {
+    className: "sub"
+  }, "\uB370\uC774\uD130 \uCD08\uAE30\uD654 \uBC0F \uAC8C\uC784 \uC124\uC815")), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("h2", null, "\uD83D\uDD04 \uC0C8 \uCC28\uC218 \uAC1C\uC124 (\uC804\uCCB4 \uCD08\uAE30\uD654)"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      marginBottom: 10
+    }
+  }, "\uC0C8\uB85C\uC6B4 \uAC8C\uC784 \uCC28\uC218\uB97C \uC2DC\uC791\uD560 \uB54C \uC0AC\uC6A9\uD569\uB2C8\uB2E4. ", /*#__PURE__*/React.createElement("b", null, "\uBAA8\uB4E0 \uD68C\uC0AC\uC758 \uB370\uC774\uD130\uAC00 \uC644\uC804\uD788 \uC0AD\uC81C"), "\uB429\uB2C8\uB2E4. \uC0AD\uC81C \uC804\uC5D0 \uBC18\uB4DC\uC2DC CSV\uB97C \uBA3C\uC800 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."), /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      background: 'var(--red)'
+    },
+    onClick: resetAll
+  }, "\u26A0\uFE0F \uC804\uCCB4 \uB370\uC774\uD130 \uCD08\uAE30\uD654 (\uC0C8 \uCC28\uC218 \uC2DC\uC791)")), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("h2", null, "\u2139\uFE0F \uC548\uB0B4"), /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      lineHeight: 1.7
+    }
+  }, "\xB7 \uD559\uC2B5\uC790\uAC00 \uC785\uC7A5\uD558\uC5EC \uB370\uC774\uD130\uB97C \uC800\uC7A5\uD558\uBA74 \uC790\uB3D9\uC73C\uB85C '\uD604\uD669' \uD0ED\uC5D0 \uB098\uD0C0\uB0A9\uB2C8\uB2E4.", /*#__PURE__*/React.createElement("br", null), "\xB7 '\uC21C\uC704' \uD0ED\uC5D0\uC11C Game\uBCC4/\uB204\uC801/\uC870\uBCC4 \uC21C\uC704\uB97C \uC2E4\uC2DC\uAC04\uC73C\uB85C \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", /*#__PURE__*/React.createElement("br", null), "\xB7 '\uB370\uC774\uD130' \uD0ED\uC5D0\uC11C \uC804\uCCB4 \uD68C\uC0AC\uC758 \uC810\uC218\xB7\uC774\uC775\uC744 \uD45C\uB85C \uD655\uC778\uD558\uACE0 CSV\uB85C \uB2E4\uC6B4\uB85C\uB4DC\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", /*#__PURE__*/React.createElement("br", null), "\xB7 \uD2B9\uC815 \uD68C\uC0AC\uB97C \uC0AD\uC81C\uD558\uB824\uBA74 '\uD604\uD669' \uD0ED\uC5D0\uC11C \uD574\uB2F9 \uD68C\uC0AC\uB97C \uB20C\uB7EC \uD3BC\uCE5C \uB4A4 '\uD83D\uDDD1 \uC774 \uD68C\uC0AC \uC0AD\uC81C' \uBC84\uD2BC\uC744 \uC0AC\uC6A9\uD558\uC138\uC694.", /*#__PURE__*/React.createElement("br", null), "\xB7 \uAD00\uB9AC\uC790 \uBE44\uBC00\uBC88\uD638\uB294 ", /*#__PURE__*/React.createElement("b", null, "admin2024"), "\uC785\uB2C8\uB2E4. \uBCC0\uACBD\uC774 \uD544\uC694\uD558\uC2DC\uBA74 \uAC1C\uBC1C\uC790\uC5D0\uAC8C \uC694\uCCAD\uD558\uC138\uC694."))), /*#__PURE__*/React.createElement("div", {
+    className: "nav"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "inner"
+  }, tabs.map(t => /*#__PURE__*/React.createElement("button", {
+    key: t[0],
+    className: tab === t[0] ? 'on' : '',
+    onClick: () => setTab(t[0])
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ic"
+  }, t[2]), t[1])))));
+}
 /* ───── 앱 ───── */
 function App() {
   const [ready, setReady] = useState(false);
@@ -1430,6 +1757,7 @@ function App() {
     [all, setAll] = useState([]);
   const [tab, setTab] = useState('g1'),
     [toast, setToast] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const saveTimer = useRef(null);
   useEffect(() => {
     if (!initFb()) {
@@ -1459,7 +1787,14 @@ function App() {
         setCo(ex ? normalizeCo(ex) : emptyCo(g, c, name));
       }).catch(() => setCo(emptyCo(g, c, name)));
     } else setCo(emptyCo(g, c, name));
-  }; // 오프라인(Firebase 없음): 바로 새로 시작
+  };
+  const adminLogin = pw => {
+    if (pw === ADMIN_PW) {
+      setIsAdmin(true);
+    } else {
+      alert('비밀번호가 틀렸습니다.');
+    }
+  };
   const persist = data => {
     if (!DB || !myKey) return;
     clearTimeout(saveTimer.current);
@@ -1486,10 +1821,17 @@ function App() {
       marginTop: 60
     }
   }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026");
+  if (isAdmin) return /*#__PURE__*/React.createElement("div", {
+    className: "wrap"
+  }, /*#__PURE__*/React.createElement(Admin, {
+    all: all,
+    onLogout: () => setIsAdmin(false)
+  }));
   if (!me || !co) return /*#__PURE__*/React.createElement("div", {
     className: "wrap"
   }, /*#__PURE__*/React.createElement(Entry, {
-    onEnter: enter
+    onEnter: enter,
+    onAdmin: adminLogin
   }));
   const tabs = [['g1', 'Game 1', '📊'], ['g2', 'Game 2', '💰'], ['g3', 'Game 3', '🏭'], ['rank', '순위', '🏆']];
   return /*#__PURE__*/React.createElement("div", {
